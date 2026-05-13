@@ -1,0 +1,19 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Large Files
+IPL.csv
+
+# Render specific
+.env

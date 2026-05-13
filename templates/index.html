@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IPL Analytics & ML Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  /* ============ Design Tokens ============ */
+  :root {
+    --bg: #0a0e1a;
+    --bg-elev: #111827;
+    --bg-card: #0f172a;
+    --bg-soft: #0b1222;
+    --border: #1f2937;
+    --border-strong: #2a374b;
+    --text: #e5e7eb;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --text-faint: #475569;
+
+    --brand: #f59e0b;          /* IPL gold */
+    --brand-2: #fbbf24;
+    --accent: #6366f1;         /* indigo */
+    --accent-2: #8b5cf6;
+    --teal: #14b8a6;
+    --rose: #f43f5e;
+    --emerald: #10b981;
+
+    --radius: 14px;
+    --radius-sm: 10px;
+    --shadow-card: 0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 32px -16px rgba(0,0,0,0.6);
+    --gradient-brand: linear-gradient(135deg, #f59e0b 0%, #f43f5e 100%);
+    --gradient-ml: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(99,102,241,0.08), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(245,158,11,0.06), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+  code { font-family: 'JetBrains Mono', monospace; }
+
+  /* ============ Header ============ */
+  header {
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(8px);
+    background: rgba(10, 14, 26, 0.7);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .header-inner {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 18px 32px;
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark {
+    width: 42px; height: 42px; border-radius: 11px;
+    background: var(--gradient-brand);
+    display: grid; place-items: center;
+    font-size: 20px;
+    box-shadow: 0 8px 24px -8px rgba(245,158,11,0.5);
+  }
+  .brand-text h1 {
+    font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--text);
+  }
+  .brand-text p {
+    font-size: 12px; color: var(--text-dim); margin-top: 2px;
+  }
+  .header-meta { display: flex; align-items: center; gap: 10px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(99,102,241,0.1);
+    border: 1px solid rgba(99,102,241,0.25);
+    color: #a5b4fc;
+    padding: 6px 12px; border-radius: 999px;
+    font-size: 11px; font-weight: 500;
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--emerald); box-shadow: 0 0 8px var(--emerald); }
+
+  /* ============ Layout ============ */
+  .container { max-width: 1400px; margin: 0 auto; padding: 28px 32px 64px; }
+
+  /* ============ Stats ============ */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .stat {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+    transition: transform .2s ease, border-color .2s ease;
+  }
+  .stat:hover { transform: translateY(-2px); border-color: var(--border-strong); }
+  .stat::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+    background: var(--gradient-brand); opacity: .6;
+  }
+  .stat .label {
+    font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+  }
+  .stat .value {
+    font-size: 26px; font-weight: 700; color: var(--text); margin-top: 8px; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .sub { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+
+  /* ============ Tabs ============ */
+  .tabs {
+    display: flex; gap: 4px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+  }
+  .tab {
+    flex: 1 1 auto; min-width: max-content;
+    padding: 9px 16px;
+    border-radius: 9px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 13px; font-weight: 500;
+    transition: all .15s ease;
+    text-align: center;
+    user-select: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  }
+  .tab:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .tab.active {
+    background: var(--bg-soft);
+    color: var(--brand);
+    box-shadow: inset 0 0 0 1px rgba(245,158,11,0.25);
+  }
+  .tab.ml-tab.active {
+    color: #c4b5fd;
+    box-shadow: inset 0 0 0 1px rgba(139,92,246,0.35);
+  }
+  .tab .tag {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+    padding: 2px 6px; border-radius: 4px;
+    background: rgba(139,92,246,0.15); color: #a78bfa;
+  }
+
+  /* ============ Sections / Cards ============ */
+  .section { display: none; animation: fadeIn .25s ease; }
+  .section.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .grid1 { display: grid; grid-template-columns: 1fr; gap: 18px; }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px 22px 20px;
+    box-shadow: var(--shadow-card);
+    transition: border-color .2s ease;
+  }
+  .card:hover { border-color: var(--border-strong); }
+  .card.ml-card { border-color: rgba(139,92,246,0.18); }
+  .card.ml-card:hover { border-color: rgba(139,92,246,0.32); }
+
+  .card-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    margin-bottom: 18px;
+  }
+  .card-title {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-title .ico { font-size: 14px; }
+  .card-sub { font-size: 11px; color: var(--text-faint); font-weight: 500; }
+
+  .chart-wrap { position: relative; height: 280px; }
+  .chart-wrap.tall { height: 340px; }
+  .load {
+    display: flex; align-items: center; justify-content: center; height: 100%;
+    color: var(--text-faint); font-size: 12px; gap: 8px;
+  }
+  .spinner {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid var(--border-strong); border-top-color: var(--brand);
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ============ ML Forms ============ */
+  .ml-form { display: flex; flex-direction: column; gap: 16px; }
+  .ml-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field label {
+    font-size: 11px; color: var(--text-muted);
+    margin-bottom: 6px; display: block;
+    text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+  }
+  input[type=number], select, .search-input {
+    width: 100%;
+    background: var(--bg-soft);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 11px 14px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  input[type=number]:focus, select:focus, .search-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+  }
+  select {
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+  }
+  .ml-btn {
+    background: var(--gradient-ml);
+    color: white; border: none;
+    padding: 12px 20px; border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 13px; font-weight: 600;
+    font-family: inherit;
+    transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+    box-shadow: 0 8px 20px -8px rgba(99,102,241,0.6);
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .ml-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 28px -10px rgba(99,102,241,0.7); }
+  .ml-btn:active { transform: translateY(0); }
+
+  .result-box {
+    background: linear-gradient(180deg, rgba(99,102,241,0.05), transparent);
+    border: 1px solid rgba(139,92,246,0.25);
+    border-radius: var(--radius-sm);
+    padding: 18px;
+    display: none;
+  }
+  .result-box.show { display: block; animation: fadeIn .3s ease; }
+  .result-title {
+    font-size: 28px; font-weight: 700; color: var(--brand);
+    letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+  }
+  .result-sub { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+  .result-badge {
+    display: inline-block; margin-top: 10px;
+    background: rgba(139,92,246,0.12);
+    border: 1px solid rgba(139,92,246,0.3);
+    color: #c4b5fd;
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* Probability bars */
+  .prob-bar { margin-top: 8px; }
+  .prob-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .prob-name { font-size: 12px; color: var(--text); width: 160px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prob-track { flex: 1; height: 8px; background: var(--bg-soft); border-radius: 999px; overflow: hidden; }
+  .prob-fill { height: 100%; border-radius: 999px; transition: width .8s cubic-bezier(.2,.8,.2,1); }
+  .prob-val { font-size: 12px; color: var(--text); width: 44px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* Info card prose */
+  .prose { font-size: 13px; color: var(--text-muted); line-height: 1.75; }
+  .prose strong { color: var(--text); font-weight: 600; }
+  .prose .hl { color: #c4b5fd; font-weight: 500; }
+  .prose code { background: var(--bg-soft); padding: 2px 7px; border-radius: 5px; color: var(--brand); font-size: 12px; border: 1px solid var(--border); }
+  .prose ul { list-style: none; padding: 0; margin: 6px 0; }
+  .prose ul li { padding: 3px 0 3px 16px; position: relative; }
+  .prose ul li::before { content: "▸"; position: absolute; left: 0; color: var(--accent); font-size: 10px; top: 6px; }
+
+  .metric-box {
+    margin-top: 18px; padding: 14px 16px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+  .metric-box .lbl { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+  .metric-box .val { font-size: 22px; color: #a78bfa; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .metric-box .hint { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+
+  /* Cluster summary */
+  .cluster-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .cluster-card {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px 14px;
+    text-align: center;
+    transition: transform .15s ease, border-color .15s ease;
+  }
+  .cluster-card:hover { transform: translateY(-2px); border-color: var(--border-strong); }
+  .cluster-card .role { font-size: 12px; font-weight: 600; color: #c4b5fd; margin-bottom: 8px; }
+  .cluster-card .cnt { font-size: 24px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .cluster-card .meta { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+
+  /* Player table */
+  .table-wrap { overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+  .player-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .player-table th {
+    text-align: left; padding: 10px 14px;
+    color: var(--text-faint); font-weight: 600;
+    background: var(--bg-soft);
+    border-bottom: 1px solid var(--border);
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .player-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .player-table tbody tr { transition: background .12s ease; }
+  .player-table tbody tr:hover td { background: rgba(99,102,241,0.04); }
+  .player-table tbody tr:last-child td { border-bottom: none; }
+  .role-pill {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+  }
+  .r0 { background: rgba(244,63,94,0.12); color: #fb7185; border: 1px solid rgba(244,63,94,0.25); }
+  .r1 { background: rgba(20,184,166,0.12); color: #2dd4bf; border: 1px solid rgba(20,184,166,0.25); }
+  .r2 { background: rgba(245,158,11,0.12); color: var(--brand-2); border: 1px solid rgba(245,158,11,0.25); }
+  .r3 { background: rgba(139,92,246,0.12); color: #a78bfa; border: 1px solid rgba(139,92,246,0.25); }
+
+  footer {
+    text-align: center; padding: 24px;
+    color: var(--text-faint); font-size: 11px;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  /* ============ Responsive ============ */
+  @media (max-width: 960px) {
+    .grid2 { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .cluster-summary { grid-template-columns: repeat(2, 1fr); }
+    .ml-row { grid-template-columns: 1fr; }
+    .container, .header-inner { padding-left: 18px; padding-right: 18px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <div class="brand-mark">🏏</div>
+      <div class="brand-text">
+        <h1>IPL Analytics &amp; ML Dashboard</h1>
+        <p>Interactive insights powered by Flask · scikit-learn · Chart.js</p>
+      </div>
+    </div>
+    <div class="header-meta">
+      <span class="pill"><span class="dot"></span>Live data</span>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ============ Stats ============ -->
+  <div class="stats">
+    <div class="stat">
+      <div class="label">Total Matches</div>
+      <div class="value" id="s-matches">—</div>
+      <div class="sub">Across all seasons</div>
+    </div>
+    <div class="stat">
+      <div class="label">Seasons</div>
+      <div class="value" id="s-seasons">—</div>
+      <div class="sub">Years of data</div>
+    </div>
+    <div class="stat">
+      <div class="label">Teams</div>
+      <div class="value" id="s-teams">—</div>
+      <div class="sub">Franchises tracked</div>
+    </div>
+    <div class="stat">
+      <div class="label">Most Wins</div>
+      <div class="value" id="s-champ" style="font-size:18px">—</div>
+      <div class="sub">Top franchise</div>
+    </div>
+  </div>
+
+  <!-- ============ Tabs ============ -->
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('teams',this)">🏆 Teams</div>
+    <div class="tab"        onclick="showTab('toss',this)">🪙 Toss</div>
+    <div class="tab"        onclick="showTab('batting',this)">🏏 Batting</div>
+    <div class="tab"        onclick="showTab('bowling',this)">🎳 Bowling</div>
+    <div class="tab"        onclick="showTab('seasons',this)">📅 Seasons</div>
+    <div class="tab ml-tab" onclick="showTab('ml-score',this)">🤖 Score Predictor <span class="tag">ML</span></div>
+    <div class="tab ml-tab" onclick="showTab('ml-win',this)">🎯 Win Predictor <span class="tag">ML</span></div>
+    <div class="tab ml-tab" onclick="showTab('ml-cluster',this)">🔬 Player Clusters <span class="tag">ML</span></div>
+  </div>
+
+  <!-- TEAMS -->
+  <div class="section active" id="tab-teams">
+    <div class="grid2">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">🏆</span>Most Wins by Team</div></div>
+        <div class="chart-wrap"><div class="load" id="l-tw"><span class="spinner"></span>Loading…</div><canvas id="teamWinsChart" style="display:none"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">🪙</span>Toss Decision Preference</div></div>
+        <div class="chart-wrap"><div class="load" id="l-td"><span class="spinner"></span>Loading…</div><canvas id="tossDecChart" style="display:none"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOSS -->
+  <div class="section" id="tab-toss">
+    <div class="grid2">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">🪙</span>Does Winning the Toss Help?</div></div>
+        <div class="chart-wrap"><div class="load" id="l-te"><span class="spinner"></span>Loading…</div><canvas id="tossEffChart" style="display:none"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">🎯</span>Bat vs Field After Toss</div></div>
+        <div class="chart-wrap"><div class="load" id="l-td2"><span class="spinner"></span>Loading…</div><canvas id="tossDecChart2" style="display:none"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BATTING -->
+  <div class="section" id="tab-batting">
+    <div class="grid2">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title"><span class="ico">⚡</span>Top 10 Batters by Strike Rate</div>
+          <div class="card-sub">min. 500 balls faced</div>
+        </div>
+        <div class="chart-wrap"><div class="load" id="l-bat"><span class="spinner"></span>Loading…</div><canvas id="batterChart" style="display:none"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">🔥</span>Powerplay vs Death Overs</div></div>
+        <div class="chart-wrap"><div class="load" id="l-ph"><span class="spinner"></span>Loading…</div><canvas id="phaseChart" style="display:none"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">🏏</span>Highest 4 & 6 Hitters</div></div>
+        <div class="chart-wrap"><div class="load" id="l-bound"><span class="spinner"></span>Loading…</div><canvas id="boundaryChart" style="display:none"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">👑</span>Orange Cap Winners</div></div>
+        <div class="table-wrap" style="height:280px; overflow-y:auto;">
+          <table class="player-table">
+            <thead><tr><th>Season</th><th>Player</th><th>Runs</th></tr></thead>
+            <tbody id="orange-cap-tbody"><tr><td colspan="3" style="text-align:center; padding:24px; color:var(--text-faint);">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOWLING -->
+  <div class="section" id="tab-bowling">
+    <div class="grid2">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">🎳</span>Top 10 Bowlers by Economy</div></div>
+        <div class="chart-wrap"><div class="load" id="l-bwl"><span class="spinner"></span>Loading…</div><canvas id="bowlerChart" style="display:none"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">❌</span>Dismissal Types</div></div>
+        <div class="chart-wrap"><div class="load" id="l-dis"><span class="spinner"></span>Loading…</div><canvas id="dismissalChart" style="display:none"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">🔥</span>Powerplay vs Death Wickets</div></div>
+        <div class="chart-wrap"><div class="load" id="l-bwl-ph"><span class="spinner"></span>Loading…</div><canvas id="bwlPhaseChart" style="display:none"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">💜</span>Purple Cap Winners</div></div>
+        <div class="table-wrap" style="height:280px; overflow-y:auto;">
+          <table class="player-table">
+            <thead><tr><th>Season</th><th>Player</th><th>Wickets</th></tr></thead>
+            <tbody id="purple-cap-tbody"><tr><td colspan="3" style="text-align:center; padding:24px; color:var(--text-faint);">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEASONS -->
+  <div class="section" id="tab-seasons">
+    <div class="grid1">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">📈</span>Season-wise Average Score</div></div>
+        <div class="chart-wrap tall"><div class="load" id="l-ss"><span class="spinner"></span>Loading…</div><canvas id="seasonChart" style="display:none"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ML: SCORE -->
+  <div class="section" id="tab-ml-score">
+    <div class="grid2">
+      <div class="card ml-card">
+        <div class="card-head">
+          <div class="card-title"><span class="ico">🤖</span>Score Predictor</div>
+          <div class="card-sub">Linear Regression</div>
+        </div>
+        <div class="ml-form">
+          <div class="ml-row">
+            <div class="field">
+              <label>Powerplay Runs (overs 1–6)</label>
+              <input type="number" id="pp-runs" placeholder="e.g. 55" min="0" max="120" value="55">
+            </div>
+            <div class="field">
+              <label>Powerplay Wickets Lost</label>
+              <input type="number" id="pp-wkts" placeholder="e.g. 2" min="0" max="6" value="2">
+            </div>
+          </div>
+          <button class="ml-btn" onclick="predictScore()">🎯 Predict Final Score</button>
+          <div class="result-box" id="score-result">
+            <div class="result-title" id="score-val">—</div>
+            <div class="result-sub" id="score-insight">—</div>
+            <span class="result-badge" id="score-badge">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="card ml-card">
+        <div class="card-head"><div class="card-title"><span class="ico">📊</span>About Linear Regression</div></div>
+        <div class="prose">
+          Linear Regression finds the <span class="hl">best-fit line</span> between input features and a target value.
+          <p style="margin-top:12px"><strong>Features used</strong></p>
+          <ul>
+            <li>Powerplay runs scored</li>
+            <li>Wickets lost in powerplay</li>
+          </ul>
+          <p style="margin-top:8px"><strong>Target:</strong> Total innings score</p>
+          <p style="margin-top:8px"><strong>Formula</strong></p>
+          <p style="margin-top:6px"><code>Score = w₁·pp_runs + w₂·pp_wickets + bias</code></p>
+        </div>
+        <div class="metric-box">
+          <div class="lbl">Model Performance</div>
+          <div class="val" id="r2-display">R² = loading…</div>
+          <div class="hint">Higher is better (max = 1.0)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ML: WIN -->
+  <div class="section" id="tab-ml-win">
+    <div class="grid2">
+      <div class="card ml-card">
+        <div class="card-head">
+          <div class="card-title"><span class="ico">🎯</span>Win Probability Predictor</div>
+          <div class="card-sub">Random Forest</div>
+        </div>
+        <div class="ml-form" id="win-form">
+          <div class="ml-row">
+            <div class="field"><label>Team 1 (Batting)</label><select id="sel-t1"><option>Loading…</option></select></div>
+            <div class="field"><label>Team 2 (Bowling)</label><select id="sel-t2"><option>Loading…</option></select></div>
+          </div>
+          <div class="field"><label>Venue</label><select id="sel-venue"><option>Loading…</option></select></div>
+          <div class="ml-row">
+            <div class="field"><label>Toss Winner</label><select id="sel-toss-w"><option>Loading…</option></select></div>
+            <div class="field"><label>Toss Decision</label>
+              <select id="sel-toss-d"><option value="bat">Bat</option><option value="field">Field</option></select>
+            </div>
+          </div>
+          <button class="ml-btn" onclick="predictWin()">🏏 Predict Winner</button>
+          <div class="result-box" id="win-result">
+            <div class="result-sub" style="margin-bottom:10px">Win Probability</div>
+            <div class="prob-bar" id="prob-bars"></div>
+            <div class="result-sub" style="margin-top:14px">Predicted Winner: <span style="color:var(--brand);font-weight:700" id="win-winner">—</span></div>
+            <span class="result-badge" id="win-badge">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="card ml-card">
+        <div class="card-head"><div class="card-title"><span class="ico">🌲</span>About Random Forest</div></div>
+        <div class="prose">
+          Random Forest builds <span class="hl">100 decision trees</span> and combines their votes for the final prediction.
+          <p style="margin-top:12px"><strong>Features used</strong></p>
+          <ul>
+            <li>Team identities (Team 1 &amp; Team 2)</li>
+            <li>Historical win rates of each team</li>
+            <li>Venue (home advantage)</li>
+            <li>Toss winner and toss decision</li>
+          </ul>
+          <p style="margin-top:8px"><strong>Why it works:</strong> Captures non-linear patterns and feature interactions automatically — no manual engineering needed.</p>
+        </div>
+        <div class="metric-box">
+          <div class="lbl">Model Accuracy (Test Set)</div>
+          <div class="val" id="acc-display">loading…</div>
+          <div class="hint">100 trees · 80/20 train-test split</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ML: CLUSTERS -->
+  <div class="section" id="tab-ml-cluster">
+    <div class="card ml-card" style="margin-bottom:18px">
+      <div class="card-head" style="align-items:center">
+        <div>
+          <div class="card-title"><span class="ico">🔬</span>Player Role Clustering</div>
+          <div class="card-sub">K-Means · k = 3</div>
+        </div>
+        <div class="tabs" style="margin-bottom:0; padding:4px">
+          <div class="tab cl-tab active" onclick="setClusterView('batters',this)">Batters</div>
+          <div class="tab cl-tab" onclick="setClusterView('bowlers',this)">Bowlers</div>
+          <div class="tab cl-tab" onclick="setClusterView('allrounders',this)">Allrounders</div>
+        </div>
+      </div>
+      <div class="cluster-summary" id="cluster-summary">
+        <div class="cluster-card"><div class="role">Loading…</div></div>
+      </div>
+      <input class="search-input" id="player-search" placeholder="🔍  Search player name…" oninput="filterPlayers()" style="margin-bottom:14px">
+      <div class="table-wrap">
+        <table class="player-table">
+          <thead id="player-thead"><tr><th>Player</th><th>Role</th><th>Strike Rate</th><th>Avg Runs/Match</th><th>Total Runs</th></tr></thead>
+          <tbody id="player-tbody"><tr><td colspan="5" style="color:var(--text-faint);padding:24px;text-align:center">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card ml-card">
+      <div class="card-head"><div class="card-title"><span class="ico">📐</span>About K-Means Clustering</div></div>
+      <div class="prose" id="cluster-prose">
+        K-Means groups players into <span class="hl">3 clusters</span> based on performance — without any labels.
+        <p style="margin-top:12px"><strong>Algorithm</strong></p>
+        <ul>
+          <li>Place 3 cluster centers randomly</li>
+          <li>Assign each player to nearest center</li>
+          <li>Move centers to the mean of their group</li>
+          <li>Repeat until convergence</li>
+        </ul>
+        <p style="margin-top:8px">This is <span class="hl">unsupervised ML</span> — no predefined labels required.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>IPL Analytics Dashboard · Flask + scikit-learn (LinearRegression · RandomForest · KMeans) + Chart.js</footer>
+
+<script>
+// Chart.js global theme
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = 'rgba(148,163,184,0.08)';
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.font.size = 11;
+Chart.defaults.plugins.tooltip.backgroundColor = '#0f172a';
+Chart.defaults.plugins.tooltip.borderColor = '#2a374b';
+Chart.defaults.plugins.tooltip.borderWidth = 1;
+Chart.defaults.plugins.tooltip.padding = 10;
+Chart.defaults.plugins.tooltip.cornerRadius = 8;
+Chart.defaults.plugins.tooltip.titleColor = '#e5e7eb';
+Chart.defaults.plugins.tooltip.bodyColor = '#cbd5e1';
+
+const PALETTE = {
+  brand: '#f59e0b', brand2: '#fbbf24',
+  accent: '#6366f1', accent2: '#8b5cf6',
+  teal: '#14b8a6', rose: '#f43f5e', emerald: '#10b981',
+  pie: ['#f59e0b','#f43f5e','#14b8a6','#8b5cf6','#ec4899','#10b981','#fbbf24','#f97316']
+};
+
+let allPlayers = [];
+
+function showTab(name, el) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  el.classList.add('active');
+}
+
+function sc(cid, lid) {
+  document.getElementById(lid).style.display = 'none';
+  const c = document.getElementById(cid);
+  c.style.display = 'block';
+  return c;
+}
+
+const baseOpts = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { labels: { color: '#cbd5e1', usePointStyle: true, padding: 14 } } },
+  scales: {
+    x: { grid: { display: false }, ticks: { color: '#94a3b8' } },
+    y: { grid: { color: 'rgba(148,163,184,0.06)' }, ticks: { color: '#94a3b8' } }
+  }
+};
+
+// ── Charts ─────────────────────────────────────────────
+fetch('/api/team_wins').then(r=>r.json()).then(d=>{
+  const c = sc('teamWinsChart','l-tw');
+  new Chart(c,{type:'bar',data:{labels:d.teams,datasets:[{label:'Wins',data:d.wins,backgroundColor:PALETTE.brand,borderRadius:6,borderSkipped:false,maxBarThickness:36}]},
+    options:{...baseOpts, plugins:{legend:{display:false}}, scales:{...baseOpts.scales, x:{...baseOpts.scales.x, ticks:{...baseOpts.scales.x.ticks, maxRotation:45, minRotation:30}}}}});
+  document.getElementById('s-teams').textContent = d.teams.length + '+';
+  document.getElementById('s-champ').textContent = d.teams[0];
+});
+
+fetch('/api/toss_effect').then(r=>r.json()).then(d=>{
+  const c = sc('tossEffChart','l-te');
+  new Chart(c,{type:'doughnut',data:{labels:d.labels,datasets:[{data:d.values,backgroundColor:[PALETTE.teal,PALETTE.rose],borderWidth:0,hoverOffset:6}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'bottom',labels:{color:'#cbd5e1',usePointStyle:true,padding:14}}}}});
+  document.getElementById('s-matches').textContent = (d.values[0]+d.values[1]).toLocaleString();
+});
+
+function makeTossDec(cid, lid) {
+  fetch('/api/toss_decision').then(r=>r.json()).then(d=>{
+    const c = sc(cid, lid);
+    new Chart(c,{type:'bar',data:{labels:d.decisions,datasets:[{data:d.counts,backgroundColor:[PALETTE.brand,PALETTE.teal],borderRadius:6,borderSkipped:false,maxBarThickness:80}]},
+      options:{...baseOpts, plugins:{legend:{display:false}}}});
+  });
+}
+makeTossDec('tossDecChart','l-td');
+makeTossDec('tossDecChart2','l-td2');
+
+fetch('/api/top_batters').then(r=>r.json()).then(d=>{
+  const c = sc('batterChart','l-bat');
+  new Chart(c,{type:'bar',data:{labels:d.batters,datasets:[{label:'Strike Rate',data:d.strike_rates,backgroundColor:PALETTE.accent2,borderRadius:6,borderSkipped:false,maxBarThickness:32}]},
+    options:{...baseOpts, plugins:{legend:{display:false},tooltip:{callbacks:{afterLabel:ctx=>`Runs: ${d.total_runs[ctx.dataIndex]}`}}},
+      scales:{...baseOpts.scales, x:{...baseOpts.scales.x, ticks:{...baseOpts.scales.x.ticks, maxRotation:45, minRotation:30}}, y:{...baseOpts.scales.y, title:{display:true,text:'Strike Rate',color:'#94a3b8'}}}}});
+});
+
+fetch('/api/top_bowlers').then(r=>r.json()).then(d=>{
+  const c = sc('bowlerChart','l-bwl');
+  new Chart(c,{type:'bar',data:{labels:d.bowlers,datasets:[{label:'Economy',data:d.economy,backgroundColor:PALETTE.emerald,borderRadius:6,borderSkipped:false,maxBarThickness:32}]},
+    options:{...baseOpts, plugins:{legend:{display:false},tooltip:{callbacks:{afterLabel:ctx=>`Wickets: ${d.wickets[ctx.dataIndex]}`}}},
+      scales:{...baseOpts.scales, x:{...baseOpts.scales.x, ticks:{...baseOpts.scales.x.ticks, maxRotation:45, minRotation:30}}}}});
+});
+
+fetch('/api/phase_runs').then(r=>r.json()).then(d=>{
+  const c = sc('phaseChart','l-ph');
+  const all = [...new Set([...d.pp_batters,...d.dt_batters])];
+  const ppM = Object.fromEntries(d.pp_batters.map((b,i)=>[b,d.pp_runs[i]]));
+  const dtM = Object.fromEntries(d.dt_batters.map((b,i)=>[b,d.dt_runs[i]]));
+  new Chart(c,{type:'bar',data:{labels:all,datasets:[
+    {label:'Powerplay',data:all.map(b=>ppM[b]||0),backgroundColor:PALETTE.brand,borderRadius:5,borderSkipped:false,maxBarThickness:24},
+    {label:'Death Overs',data:all.map(b=>dtM[b]||0),backgroundColor:PALETTE.rose,borderRadius:5,borderSkipped:false,maxBarThickness:24}
+  ]},options:{...baseOpts, scales:{...baseOpts.scales, x:{...baseOpts.scales.x, ticks:{...baseOpts.scales.x.ticks, maxRotation:45, minRotation:30}}}}});
+});
+
+fetch('/api/boundaries').then(r=>r.json()).then(d=>{
+  const c = sc('boundaryChart','l-bound');
+  const all = [...new Set([...d.top_4s.batters, ...d.top_6s.batters])];
+  const m4 = Object.fromEntries(d.top_4s.batters.map((b,i)=>[b,d.top_4s.count[i]]));
+  const m6 = Object.fromEntries(d.top_6s.batters.map((b,i)=>[b,d.top_6s.count[i]]));
+  new Chart(c,{type:'bar',data:{labels:all,datasets:[
+    {label:'4s',data:all.map(b=>m4[b]||0),backgroundColor:PALETTE.teal,borderRadius:5,borderSkipped:false,maxBarThickness:24},
+    {label:'6s',data:all.map(b=>m6[b]||0),backgroundColor:PALETTE.brand,borderRadius:5,borderSkipped:false,maxBarThickness:24}
+  ]},options:{...baseOpts, scales:{...baseOpts.scales, x:{...baseOpts.scales.x, ticks:{...baseOpts.scales.x.ticks, maxRotation:45, minRotation:30}}}}});
+});
+
+fetch('/api/orange_cap').then(r=>r.json()).then(d=>{
+  const tbody = document.getElementById('orange-cap-tbody');
+  tbody.innerHTML = d.seasons.map((s,i) => `<tr><td style="font-weight:600; color:var(--text);">${s}</td><td style="color:var(--text-muted);">${d.batters[i]}</td><td style="font-variant-numeric:tabular-nums; font-weight:600; color:var(--brand);">${d.runs[i]}</td></tr>`).join('');
+});
+
+fetch('/api/dismissals').then(r=>r.json()).then(d=>{
+  const c = sc('dismissalChart','l-dis');
+  new Chart(c,{type:'doughnut',data:{labels:d.types,datasets:[{data:d.counts,backgroundColor:PALETTE.pie,borderWidth:0,hoverOffset:6}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'right',labels:{color:'#cbd5e1',usePointStyle:true,padding:10,font:{size:11}}}}}});
+});
+
+fetch('/api/phase_wickets').then(r=>r.json()).then(d=>{
+  const c = sc('bwlPhaseChart','l-bwl-ph');
+  const all = [...new Set([...d.pp_bowlers,...d.dt_bowlers])];
+  const ppM = Object.fromEntries(d.pp_bowlers.map((b,i)=>[b,d.pp_wickets[i]]));
+  const dtM = Object.fromEntries(d.dt_bowlers.map((b,i)=>[b,d.dt_wickets[i]]));
+  new Chart(c,{type:'bar',data:{labels:all,datasets:[
+    {label:'Powerplay Wickets',data:all.map(b=>ppM[b]||0),backgroundColor:PALETTE.brand,borderRadius:5,borderSkipped:false,maxBarThickness:24},
+    {label:'Death Overs Wickets',data:all.map(b=>dtM[b]||0),backgroundColor:PALETTE.rose,borderRadius:5,borderSkipped:false,maxBarThickness:24}
+  ]},options:{...baseOpts, scales:{...baseOpts.scales, x:{...baseOpts.scales.x, ticks:{...baseOpts.scales.x.ticks, maxRotation:45, minRotation:30}}}}});
+});
+
+fetch('/api/purple_cap').then(r=>r.json()).then(d=>{
+  const tbody = document.getElementById('purple-cap-tbody');
+  tbody.innerHTML = d.seasons.map((s,i) => `<tr><td style="font-weight:600; color:var(--text);">${s}</td><td style="color:var(--text-muted);">${d.bowlers[i]}</td><td style="font-variant-numeric:tabular-nums; font-weight:600; color:#a78bfa;">${d.wickets[i]}</td></tr>`).join('');
+});
+
+fetch('/api/season_scores').then(r=>r.json()).then(d=>{
+  const c = sc('seasonChart','l-ss');
+  document.getElementById('s-seasons').textContent = d.seasons.length;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createLinearGradient(0,0,0,340);
+  grad.addColorStop(0,'rgba(245,158,11,0.35)');
+  grad.addColorStop(1,'rgba(245,158,11,0)');
+  new Chart(c,{type:'line',data:{labels:d.seasons,datasets:[{label:'Avg Score',data:d.avg_scores,
+    borderColor:PALETTE.brand, backgroundColor:grad, fill:true, tension:.4,
+    pointBackgroundColor:PALETTE.brand, pointBorderColor:'#0a0e1a', pointBorderWidth:2, pointRadius:5, pointHoverRadius:7, borderWidth:2.5}]},
+    options:{...baseOpts, plugins:{legend:{display:false}}, scales:{...baseOpts.scales, y:{...baseOpts.scales.y, title:{display:true,text:'Avg Runs per Innings',color:'#94a3b8'}}}}});
+});
+
+// ── ML 1: Score Predictor ─────────────────────────────
+function predictScore() {
+  const pp  = parseFloat(document.getElementById('pp-runs').value);
+  const wkt = parseFloat(document.getElementById('pp-wkts').value);
+  if (isNaN(pp)||isNaN(wkt)) { alert('Please enter valid numbers'); return; }
+  fetch('/api/ml/predict_score',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({powerplay_runs:pp,powerplay_wickets:wkt})})
+  .then(r=>r.json()).then(d=>{
+    if(d.error){alert('Error: '+d.error);return;}
+    document.getElementById('score-val').textContent  = `Predicted: ${d.predicted_score} runs`;
+    document.getElementById('score-insight').textContent = `Powerplay of ${pp} runs is ${d.insight} (avg: ${d.avg_powerplay})`;
+    document.getElementById('score-badge').textContent   = `${d.model} · R² = ${d.r2_score}`;
+    document.getElementById('r2-display').textContent    = `R² = ${d.r2_score}`;
+    document.getElementById('score-result').classList.add('show');
+  });
+}
+
+// ── ML 2: Win Predictor ───────────────────────────────
+let allWinTeams = [];
+fetch('/api/ml/teams').then(r=>r.json()).then(d=>{
+  allWinTeams = d.teams;
+  const t1sel = document.getElementById('sel-t1');
+  const t2sel = document.getElementById('sel-t2');
+  const twsel = document.getElementById('sel-toss-w');
+  
+  const updateDropdowns = () => {
+    let t1 = t1sel.value;
+    let t2 = t2sel.value;
+    if (!t1) t1 = allWinTeams[0];
+    if (!t2) t2 = allWinTeams[1];
+    if (t1 === t2) t2 = allWinTeams.find(t => t !== t1);
+    
+    t1sel.innerHTML = allWinTeams.filter(t => t !== t2).map(t => `<option value="${t}" ${t===t1?'selected':''}>${t}</option>`).join('');
+    t2sel.innerHTML = allWinTeams.filter(t => t !== t1).map(t => `<option value="${t}" ${t===t2?'selected':''}>${t}</option>`).join('');
+    
+    let tw = twsel.value;
+    if (tw !== t1 && tw !== t2) tw = t1;
+    twsel.innerHTML = `<option value="${t1}" ${t1===tw?'selected':''}>${t1}</option><option value="${t2}" ${t2===tw?'selected':''}>${t2}</option>`;
+  };
+
+  t1sel.addEventListener('change', updateDropdowns);
+  t2sel.addEventListener('change', updateDropdowns);
+  updateDropdowns();
+
+  document.getElementById('sel-venue').innerHTML = d.venues.map(v=>`<option value="${v}">${v}</option>`).join('');
+  document.getElementById('acc-display').textContent = 'Run a prediction';
+});
+
+function predictWin() {
+  const body = {
+    team1: document.getElementById('sel-t1').value,
+    team2: document.getElementById('sel-t2').value,
+    venue: document.getElementById('sel-venue').value,
+    toss_winner: document.getElementById('sel-toss-w').value,
+    toss_decision: document.getElementById('sel-toss-d').value
+  };
+  fetch('/api/ml/predict_win',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+  .then(r=>r.json()).then(d=>{
+    if(d.error){alert('Error: '+d.error);return;}
+    const teams = [{name:d.team1,prob:d.team1_prob,color:PALETTE.teal},{name:d.team2,prob:d.team2_prob,color:PALETTE.rose}];
+    document.getElementById('prob-bars').innerHTML = teams.map(t=>`
+      <div class="prob-row">
+        <div class="prob-name">${t.name}</div>
+        <div class="prob-track"><div class="prob-fill" style="width:${t.prob}%;background:${t.color}"></div></div>
+        <div class="prob-val">${t.prob}%</div>
+      </div>`).join('');
+    document.getElementById('win-winner').textContent = d.predicted_winner;
+    document.getElementById('win-badge').textContent  = `${d.model} · Accuracy ${d.model_accuracy}%`;
+    document.getElementById('acc-display').textContent = d.model_accuracy + '%';
+    document.getElementById('win-result').classList.add('show');
+  });
+}
+
+// ── ML 3: Player Clusters ─────────────────────────────
+let clusterDatasets = { batters: null, bowlers: null, allrounders: null };
+let currentClusterView = 'batters';
+
+fetch('/api/ml/clusters').then(r=>r.json()).then(d=>{
+  clusterDatasets = { batters: d.batters, bowlers: d.bowlers, allrounders: d.allrounders };
+  renderClusterView();
+});
+
+function setClusterView(view, el) {
+  document.querySelectorAll('.cl-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  currentClusterView = view;
+  document.getElementById('player-search').value = '';
+  renderClusterView();
+}
+
+function renderClusterView() {
+  const data = clusterDatasets[currentClusterView];
+  if (!data) return;
+  
+  let summaryHtml = '';
+  if (currentClusterView === 'batters') {
+    summaryHtml = data.summary.map(s=>`<div class="cluster-card"><div class="role">${s.role}</div><div class="cnt">${s.count}</div><div class="meta">SR ${s.avg_sr} · Avg ${s.avg_runs}</div></div>`).join('');
+    document.getElementById('player-thead').innerHTML = `<tr><th>Player</th><th>Role</th><th>Strike Rate</th><th>Avg Runs</th><th>Total Runs</th></tr>`;
+    document.getElementById('cluster-prose').innerHTML = `K-Means groups batters into <span class="hl">3 clusters</span>.<p style="margin-top:12px"><strong>Features used:</strong> Average Entry Over, Strike Rate, Avg Runs.</p>`;
+  } else if (currentClusterView === 'bowlers') {
+    summaryHtml = data.summary.map(s=>`<div class="cluster-card"><div class="role">${s.role}</div><div class="cnt">${s.count}</div><div class="meta">Econ ${s.avg_econ} · SR ${s.avg_sr}</div></div>`).join('');
+    document.getElementById('player-thead').innerHTML = `<tr><th>Player</th><th>Role</th><th>Economy</th><th>Strike Rate</th><th>Total Wickets</th></tr>`;
+    document.getElementById('cluster-prose').innerHTML = `K-Means groups bowlers into <span class="hl">4 clusters</span>.<p style="margin-top:12px"><strong>Features used:</strong> Economy Rate, Strike Rate, Middle Overs %.</p>`;
+  } else if (currentClusterView === 'allrounders') {
+    summaryHtml = data.summary.map(s=>`<div class="cluster-card" style="padding:10px"><div class="role" style="font-size:11px">${s.role}</div><div class="cnt" style="font-size:18px">${s.count}</div><div class="meta">Bat SR ${s.avg_bat_sr} · Econ ${s.avg_econ}</div></div>`).join('');
+    document.getElementById('player-thead').innerHTML = `<tr><th>Player</th><th>Role</th><th>Total Runs</th><th>Bat SR</th><th>Economy</th><th>Total Wickets</th></tr>`;
+    document.getElementById('cluster-prose').innerHTML = `K-Means groups allrounders into <span class="hl">3 clusters</span>.<p style="margin-top:12px"><strong>Features used:</strong> Batting SR, Avg Runs, Economy Rate, Total Wickets.</p>`;
+  }
+  document.getElementById('cluster-summary').innerHTML = summaryHtml;
+  
+  allPlayers = data.players;
+  renderPlayers(allPlayers);
+}
+
+function renderPlayers(players) {
+  const roleClass = {'🔥 Power Hitter':'r0','🏏 Opener':'r1','🛡️ Middle Order':'r2','⚡ Finisher':'r0', 
+                     '🚀 Pacer':'r0', '🎯 Medium Pacer':'r1', '🌀 Off Spinner':'r2', '🪄 Leg Spinner':'r3',
+                     '🎳 Bowling Allrounder':'r1', '🌱 Utility Player':'r3', '🏏 Batting Allrounder':'r2'};
+  const tbody = document.getElementById('player-tbody');
+  if (!players.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text-faint);padding:24px;text-align:center">No players found</td></tr>`;
+    return;
+  }
+  
+  tbody.innerHTML = players.slice(0,100).map(p=> {
+    let cols = '';
+    if (currentClusterView === 'batters') {
+      cols = `<td><span style="color:var(--brand);font-weight:600">${p.strike_rate}</span></td><td>${p.avg_runs}</td><td>${p.total_runs.toLocaleString()}</td>`;
+    } else if (currentClusterView === 'bowlers') {
+      cols = `<td><span style="color:var(--teal);font-weight:600">${p.economy}</span></td><td>${p.strike_rate}</td><td>${p.total_wickets.toLocaleString()}</td>`;
+    } else if (currentClusterView === 'allrounders') {
+      cols = `<td>${p.total_runs.toLocaleString()}</td><td><span style="color:var(--brand);font-weight:600">${p.bat_sr}</span></td><td><span style="color:var(--teal);font-weight:600">${p.economy}</span></td><td>${p.total_wickets.toLocaleString()}</td>`;
+    }
+    return `<tr><td style="color:var(--text);font-weight:500">${p.player}</td><td><span class="role-pill ${roleClass[p.role]||'r3'}">${p.role}</span></td>${cols}</tr>`;
+  }).join('');
+}
+
+function filterPlayers() {
+  const q = document.getElementById('player-search').value.toLowerCase();
+  renderPlayers(q ? allPlayers.filter(p=>p.player.toLowerCase().includes(q)) : allPlayers);
+}
+</script>
+</body>
+</html>
