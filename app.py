@@ -13,6 +13,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 import joblib
 import os
+import gc
+
+# Global storage for aggregated chart data
+stats_data = {}
 
 app = Flask(__name__)
 
@@ -20,7 +24,9 @@ app = Flask(__name__)
 #  LOAD DATA
 # ══════════════════════════════════════════════════════
 print("Loading IPL data...")
-df = pd.read_csv("IPL.zip", low_memory=False)
+# Load only necessary columns to save RAM
+needed_cols = ['match_id', 'venue', 'batting_team', 'bowling_team', 'innings', 'runs_total', 'bowler_wicket', 'over', 'balls_faced', 'runs_batter', 'batter', 'bowler', 'valid_ball', 'toss_winner', 'toss_decision', 'match_won_by', 'stage', 'wicket_kind', 'season', 'runs_bowler']
+df = pd.read_csv("IPL.zip", low_memory=False, usecols=lambda x: x in needed_cols)
 df.replace('Royal Challengers Bangalore', 'Royal Challengers Bengaluru', inplace=True)
 venue_mapping = {
     'Arun Jaitley Stadium, Delhi': 'Arun Jaitley Stadium',
@@ -224,9 +230,126 @@ try:
     ar['role'] = ar['cluster'].map(labels_map_ar)
     cluster_data['allrounders'] = ar
 
-    print(f"   Clustered {len(bs)} batters, {len(bowls)} bowlers, {len(ar)} allrounders")
+    # --- PRE-AGGREGATE CHART DATA ---
+    print("   Pre-aggregating chart data...")
+    stats_data['team_wins'] = matches['match_won_by'].value_counts().head(10).to_dict()
+    
+    col = 'season' if 'season' in df.columns else 'year'
+    
+    # Championships
+    finals = matches[matches['stage'] == 'Final'].copy()
+    finals = finals.sort_values(col, ascending=False)
+    stats_data['championships'] = {
+        'seasons': finals[col].astype(str).tolist(),
+        'teams': finals['match_won_by'].tolist()
+    }
+    
+    # Toss Effect
+    m2 = matches.dropna(subset=['toss_winner', 'match_won_by']).copy()
+    m2['tw'] = m2['toss_winner'] == m2['match_won_by']
+    toss_c = m2['tw'].value_counts()
+    stats_data['toss_effect'] = {'labels': ['Toss Winner Won', 'Toss Winner Lost'], 'values': [int(toss_c.get(True, 0)), int(toss_c.get(False, 0))]}
+    
+    stats_data['toss_decision'] = matches['toss_decision'].value_counts().to_dict()
+    
+    # Top Batters
+    s_bat = df.groupby('batter').agg(total_runs=('runs_batter','sum'), total_balls=('balls_faced','sum')).reset_index()
+    s_bat['strike_rate'] = (s_bat['total_runs'] / s_bat['total_balls'] * 100).round(2)
+    top_bat = s_bat[s_bat['total_balls'] >= 500].sort_values('strike_rate', ascending=False).head(10)
+    stats_data['top_batters'] = {
+        'batters': top_bat['batter'].tolist(),
+        'strike_rates': top_bat['strike_rate'].tolist(),
+        'total_runs': top_bat['total_runs'].tolist()
+    }
+    
+    # Top Bowlers
+    v_bowl = df[df['valid_ball'] == 1]
+    s_bowl = v_bowl.groupby('bowler').agg(total_runs=('runs_bowler','sum'), total_balls=('valid_ball','sum'), total_wickets=('bowler_wicket','sum')).reset_index()
+    s_bowl['economy'] = (s_bowl['total_runs'] / s_bowl['total_balls'] * 6).round(2)
+    top_bowl = s_bowl[s_bowl['total_balls'] >= 1000].sort_values('economy').head(10)
+    stats_data['top_bowlers'] = {
+        'bowlers': top_bowl['bowler'].tolist(),
+        'economy': top_bowl['economy'].tolist(),
+        'wickets': top_bowl['total_wickets'].tolist()
+    }
+
+    # Additional Stats from provided code
+    pp_bat = df[df['over'] <= 6].groupby('batter')['runs_batter'].sum().sort_values(ascending=False).head(8)
+    dt_bat = df[df['over'] >= 17].groupby('batter')['runs_batter'].sum().sort_values(ascending=False).head(8)
+    stats_data['phase_runs'] = {
+        'pp_batters': pp_bat.index.tolist(), 'pp_runs': pp_bat.values.tolist(),
+        'dt_batters': dt_bat.index.tolist(), 'dt_runs': dt_bat.values.tolist()
+    }
+
+    dismissals_data = df[df['wicket_kind'].notna()]['wicket_kind'].value_counts()
+    stats_data['dismissals'] = {'types': dismissals_data.index.tolist(), 'counts': dismissals_data.values.tolist()}
+
+    ts = df.groupby(['season','match_id','batting_team'])['runs_total'].sum().reset_index()
+    avg_scores = ts.groupby('season')['runs_total'].mean().round(1)
+    stats_data['season_scores'] = {'seasons': [str(s) for s in avg_scores.index.tolist()], 'avg_scores': avg_scores.values.tolist()}
+
+    fours = df[df['runs_batter'] == 4].groupby('batter').size().reset_index(name='fours')
+    sixes = df[df['runs_batter'] == 6].groupby('batter').size().reset_index(name='sixes')
+    top_4s = fours.sort_values('fours', ascending=False).head(10)
+    top_6s = sixes.sort_values('sixes', ascending=False).head(10)
+    stats_data['boundaries'] = {
+        'top_4s': {'batters': top_4s['batter'].tolist(), 'count': top_4s['fours'].tolist()},
+        'top_6s': {'batters': top_6s['batter'].tolist(), 'count': top_6s['sixes'].tolist()}
+    }
+
+    pp_bowl = df[df['over'] <= 6].groupby('bowler')['bowler_wicket'].sum().sort_values(ascending=False).head(8)
+    dt_bowl = df[df['over'] >= 17].groupby('bowler')['bowler_wicket'].sum().sort_values(ascending=False).head(8)
+    stats_data['phase_wickets'] = {
+        'pp_bowlers': pp_bowl.index.tolist(), 'pp_wickets': pp_bowl.values.tolist(),
+        'dt_bowlers': dt_bowl.index.tolist(), 'dt_wickets': dt_bowl.values.tolist()
+    }
+
+    # Orange & Purple Caps
+    orange_caps = df.groupby([col, 'batter'])['runs_batter'].sum().reset_index()
+    idx_orange = orange_caps.groupby(col)['runs_batter'].idxmax()
+    orange_res = orange_caps.loc[idx_orange].sort_values(col)
+    stats_data['orange_cap'] = {
+        'seasons': orange_res[col].astype(str).tolist(),
+        'batters': orange_res['batter'].tolist(),
+        'runs': orange_res['runs_batter'].tolist()
+    }
+
+    purple_caps = df.groupby([col, 'bowler'])['bowler_wicket'].sum().reset_index()
+    idx_purple = purple_caps.groupby(col)['bowler_wicket'].idxmax()
+    purple_res = purple_caps.loc[idx_purple].sort_values(col)
+    stats_data['purple_cap'] = {
+        'seasons': purple_res[col].astype(str).tolist(),
+        'bowlers': purple_res['bowler'].tolist(),
+        'wickets': purple_res['bowler_wicket'].tolist()
+    }
+
+    # History Table
+    finals_dict = dict(zip(finals[col].astype(str), finals['match_won_by']))
+    orange_dict = dict(zip(orange_res[col].astype(str), orange_res['batter']))
+    purple_dict = dict(zip(purple_res[col].astype(str), purple_res['bowler']))
+    all_seasons = sorted(list(set(finals_dict.keys()) | set(orange_dict.keys()) | set(purple_dict.keys())), reverse=True)
+    history_list = []
+    for s in all_seasons:
+        history_list.append({
+            'season': s,
+            'champion': finals_dict.get(s, 'N/A'),
+            'orange_cap': orange_dict.get(s, 'N/A'),
+            'purple_cap': purple_dict.get(s, 'N/A')
+        })
+    stats_data['history'] = history_list
+
+    print("   Memory optimization complete.")
 except Exception as e:
-    print(f"   Error: {e}")
+    print(f"   Error in ML/Stats: {e}")
+
+# Clear large dataframes to free up RAM for the API
+try:
+    del df
+    del matches
+    gc.collect()
+    print("   Raw Dataframes deleted to save RAM.")
+except:
+    pass
 
 print("OK: All models ready!\n")
 
@@ -239,136 +362,61 @@ def index():
 
 @app.route('/api/team_wins')
 def team_wins():
-    data = matches['match_won_by'].value_counts().head(10)
-    return jsonify({'teams': data.index.tolist(), 'wins': data.values.tolist()})
+    d = stats_data.get('team_wins', {})
+    return jsonify({'teams': list(d.keys()), 'wins': list(d.values())})
 
 @app.route('/api/championships')
 def championships():
-    finals = matches[matches['stage'] == 'Final'].copy()
-    col = 'season' if 'season' in finals.columns else 'year'
-    finals = finals.sort_values(col, ascending=False)
-    return jsonify({
-        'seasons': finals[col].astype(str).tolist(),
-        'teams': finals['match_won_by'].tolist()
-    })
+    return jsonify(stats_data.get('championships', {'seasons': [], 'teams': []}))
 
 @app.route('/api/toss_effect')
 def toss_effect():
-    m2 = matches.dropna(subset=['toss_winner', 'match_won_by']).copy()
-    m2['tw'] = m2['toss_winner'] == m2['match_won_by']
-    c = m2['tw'].value_counts()
-    return jsonify({'labels': ['Toss Winner Won', 'Toss Winner Lost'],
-                    'values': [int(c.get(True, 0)), int(c.get(False, 0))]})
+    return jsonify(stats_data.get('toss_effect', {'labels': [], 'values': []}))
 
 @app.route('/api/toss_decision')
 def toss_decision():
-    data = matches['toss_decision'].value_counts()
-    return jsonify({'decisions': data.index.tolist(), 'counts': data.values.tolist()})
+    d = stats_data.get('toss_decision', {})
+    return jsonify({'decisions': list(d.keys()), 'counts': list(d.values())})
 
 @app.route('/api/top_batters')
 def top_batters():
-    s = df.groupby('batter').agg(total_runs=('runs_batter','sum'), total_balls=('balls_faced','sum')).reset_index()
-    s['strike_rate'] = (s['total_runs'] / s['total_balls'] * 100).round(2)
-    top = s[s['total_balls'] >= 500].sort_values('strike_rate', ascending=False).head(10)
-    return jsonify({'batters': top['batter'].tolist(), 'strike_rates': top['strike_rate'].tolist(), 'total_runs': top['total_runs'].tolist()})
+    return jsonify(stats_data.get('top_batters', {'batters': [], 'strike_rates': [], 'total_runs': []}))
 
 @app.route('/api/top_bowlers')
 def top_bowlers():
-    v = df[df['valid_ball'] == 1]
-    s = v.groupby('bowler').agg(total_runs=('runs_bowler','sum'), total_balls=('valid_ball','sum'), total_wickets=('bowler_wicket','sum')).reset_index()
-    s['economy'] = (s['total_runs'] / s['total_balls'] * 6).round(2)
-    top = s[s['total_balls'] >= 1000].sort_values('economy').head(10)
-    return jsonify({'bowlers': top['bowler'].tolist(), 'economy': top['economy'].tolist(), 'wickets': top['total_wickets'].tolist()})
+    return jsonify(stats_data.get('top_bowlers', {'bowlers': [], 'economy': [], 'wickets': []}))
 
 @app.route('/api/phase_runs')
 def phase_runs():
-    pp = df[df['over'] <= 6].groupby('batter')['runs_batter'].sum().sort_values(ascending=False).head(8)
-    dt = df[df['over'] >= 17].groupby('batter')['runs_batter'].sum().sort_values(ascending=False).head(8)
-    return jsonify({'pp_batters': pp.index.tolist(), 'pp_runs': pp.values.tolist(),
-                    'dt_batters': dt.index.tolist(), 'dt_runs': dt.values.tolist()})
+    return jsonify(stats_data.get('phase_runs', {}))
 
 @app.route('/api/dismissals')
 def dismissals():
-    data = df[df['wicket_kind'].notna()]['wicket_kind'].value_counts()
-    return jsonify({'types': data.index.tolist(), 'counts': data.values.tolist()})
+    return jsonify(stats_data.get('dismissals', {}))
 
 @app.route('/api/season_scores')
 def season_scores():
-    ts = df.groupby(['season','match_id','batting_team'])['runs_total'].sum().reset_index()
-    avg = ts.groupby('season')['runs_total'].mean().round(1)
-    return jsonify({'seasons': [str(s) for s in avg.index.tolist()], 'avg_scores': avg.values.tolist()})
+    return jsonify(stats_data.get('season_scores', {}))
 
 @app.route('/api/boundaries')
 def boundaries():
-    fours = df[df['runs_batter'] == 4].groupby('batter').size().reset_index(name='fours')
-    sixes = df[df['runs_batter'] == 6].groupby('batter').size().reset_index(name='sixes')
-    top_4s = fours.sort_values('fours', ascending=False).head(10)
-    top_6s = sixes.sort_values('sixes', ascending=False).head(10)
-    return jsonify({
-        'top_4s': {'batters': top_4s['batter'].tolist(), 'count': top_4s['fours'].tolist()},
-        'top_6s': {'batters': top_6s['batter'].tolist(), 'count': top_6s['sixes'].tolist()}
-    })
+    return jsonify(stats_data.get('boundaries', {}))
 
 @app.route('/api/orange_cap')
 def orange_cap():
-    col = 'season' if 'season' in df.columns else 'year'
-    season_runs = df.groupby([col, 'batter'])['runs_batter'].sum().reset_index()
-    idx = season_runs.groupby(col)['runs_batter'].idxmax()
-    orange_caps = season_runs.loc[idx].sort_values(col)
-    return jsonify({
-        'seasons': orange_caps[col].astype(str).tolist(),
-        'batters': orange_caps['batter'].tolist(),
-        'runs': orange_caps['runs_batter'].tolist()
-    })
+    return jsonify(stats_data.get('orange_cap', {'seasons': [], 'batters': [], 'runs': []}))
 
 @app.route('/api/phase_wickets')
 def phase_wickets():
-    pp = df[df['over'] <= 6].groupby('bowler')['bowler_wicket'].sum().sort_values(ascending=False).head(8)
-    dt = df[df['over'] >= 17].groupby('bowler')['bowler_wicket'].sum().sort_values(ascending=False).head(8)
-    return jsonify({'pp_bowlers': pp.index.tolist(), 'pp_wickets': pp.values.tolist(),
-                    'dt_bowlers': dt.index.tolist(), 'dt_wickets': dt.values.tolist()})
+    return jsonify(stats_data.get('phase_wickets', {}))
 
 @app.route('/api/purple_cap')
 def purple_cap():
-    col = 'season' if 'season' in df.columns else 'year'
-    season_wkts = df.groupby([col, 'bowler'])['bowler_wicket'].sum().reset_index()
-    idx = season_wkts.groupby(col)['bowler_wicket'].idxmax()
-    purple_caps = season_wkts.loc[idx].sort_values(col)
-    return jsonify({
-        'seasons': purple_caps[col].astype(str).tolist(),
-        'bowlers': purple_caps['bowler'].tolist(),
-        'wickets': purple_caps['bowler_wicket'].tolist()
-    })
+    return jsonify(stats_data.get('purple_cap', {'seasons': [], 'bowlers': [], 'wickets': []}))
 
 @app.route('/api/history')
 def history():
-    col = 'season' if 'season' in df.columns else 'year'
-    
-    finals = matches[matches['stage'] == 'Final'].copy()
-    finals_dict = dict(zip(finals[col].astype(str), finals['match_won_by']))
-    
-    season_runs = df.groupby([col, 'batter'])['runs_batter'].sum().reset_index()
-    idx_orange = season_runs.groupby(col)['runs_batter'].idxmax()
-    orange_caps = season_runs.loc[idx_orange]
-    orange_dict = dict(zip(orange_caps[col].astype(str), orange_caps['batter']))
-    
-    season_wkts = df.groupby([col, 'bowler'])['bowler_wicket'].sum().reset_index()
-    idx_purple = season_wkts.groupby(col)['bowler_wicket'].idxmax()
-    purple_caps = season_wkts.loc[idx_purple]
-    purple_dict = dict(zip(purple_caps[col].astype(str), purple_caps['bowler']))
-    
-    all_seasons = sorted(list(set(finals_dict.keys()) | set(orange_dict.keys()) | set(purple_dict.keys())), reverse=True)
-    
-    history_data = []
-    for s in all_seasons:
-        history_data.append({
-            'season': s,
-            'champion': finals_dict.get(s, 'N/A'),
-            'orange_cap': orange_dict.get(s, 'N/A'),
-            'purple_cap': purple_dict.get(s, 'N/A')
-        })
-        
-    return jsonify(history_data)
+    return jsonify(stats_data.get('history', []))
 
 # ══════════════════════════════════════════════════════
 #  ML ROUTES
@@ -487,6 +535,5 @@ def player_clusters():
     return jsonify(response)
 
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
