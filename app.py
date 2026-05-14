@@ -11,6 +11,8 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+import joblib
+import os
 
 app = Flask(__name__)
 
@@ -57,158 +59,112 @@ print(f"OK: {len(df):,} rows | {len(matches):,} matches")
 # ══════════════════════════════════════════════════════
 #  ML MODEL 1 — Score Predictor (XGBoost)
 # ══════════════════════════════════════════════════════
-print("Training Score Predictor (XGBoost)...")
+print("Loading Score Predictor...")
 try:
-    match_info = df[['match_id', 'venue', 'batting_team', 'bowling_team', 'innings']].drop_duplicates()
-
-    over_stats = df.groupby(['match_id', 'innings', 'over']).agg({
-        'runs_total': 'sum',
-        'bowler_wicket': 'sum'
-    }).reset_index()
-
-    over_stats = over_stats.sort_values(['match_id', 'innings', 'over'])
-    over_stats['current_runs'] = over_stats.groupby(['match_id', 'innings'])['runs_total'].cumsum()
-    over_stats['current_wickets'] = over_stats.groupby(['match_id', 'innings'])['bowler_wicket'].cumsum()
-
-    final_scores = df.groupby(['match_id', 'innings'])['runs_total'].sum().reset_index().rename(columns={'runs_total': 'final_score'})
-    model_data = over_stats.merge(final_scores, on=['match_id', 'innings'])
-    model_data = model_data.merge(match_info, on=['match_id', 'innings'])
-
-    model_data['completed_overs'] = model_data['over'] + 1
-    model_data['crr'] = model_data['current_runs'] / model_data['completed_overs']
-    model_data = model_data[model_data['innings'] == 1]
-
-    score_le_venue = LabelEncoder()
-    score_le_team = LabelEncoder()
-    
-    all_teams = pd.concat([model_data['batting_team'], model_data['bowling_team']]).unique()
-    score_le_team.fit(all_teams)
-    score_le_venue.fit(model_data['venue'])
-    
-    model_data['venue_enc'] = score_le_venue.transform(model_data['venue'])
-    model_data['bat_enc'] = score_le_team.transform(model_data['batting_team'])
-    model_data['bowl_enc'] = score_le_team.transform(model_data['bowling_team'])
-
-    features = ['completed_overs', 'current_runs', 'current_wickets', 'crr', 'venue_enc', 'bat_enc', 'bowl_enc']
-    X_sc = model_data[features]
-    y_sc = model_data['final_score']
-    
-    score_model = XGBRegressor(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42)
-    score_model.fit(X_sc, y_sc)
-    score_r2 = round(score_model.score(X_sc, y_sc), 3)
-    print (f"   R² = {score_r2}")
+    if os.path.exists('score_model_full.joblib'):
+        data = joblib.load('score_model_full.joblib')
+        score_model = data['model']
+        score_le_team = data['le_team']
+        score_le_venue = data['le_venue']
+        score_r2 = data['r2']
+        print(f"   Loaded from disk (R² = {score_r2})")
+    else:
+        print("   Training from scratch...")
+        match_info_sc = df[['match_id', 'venue', 'batting_team', 'bowling_team', 'innings']].drop_duplicates()
+        over_stats = df.groupby(['match_id', 'innings', 'over']).agg({
+            'runs_total': 'sum', 'bowler_wicket': 'sum'
+        }).reset_index()
+        over_stats = over_stats.sort_values(['match_id', 'innings', 'over'])
+        over_stats['current_runs'] = over_stats.groupby(['match_id', 'innings'])['runs_total'].cumsum()
+        over_stats['current_wickets'] = over_stats.groupby(['match_id', 'innings'])['bowler_wicket'].cumsum()
+        final_scores = df.groupby(['match_id', 'innings'])['runs_total'].sum().reset_index().rename(columns={'runs_total': 'final_score'})
+        model_data_sc = over_stats.merge(final_scores, on=['match_id', 'innings'])
+        model_data_sc = model_data_sc.merge(match_info_sc, on=['match_id', 'innings'])
+        model_data_sc['completed_overs'] = model_data_sc['over'] + 1
+        model_data_sc['crr'] = model_data_sc['current_runs'] / model_data_sc['completed_overs']
+        model_data_sc = model_data_sc[model_data_sc['innings'] == 1]
+        score_le_venue, score_le_team = LabelEncoder(), LabelEncoder()
+        all_teams_score = pd.concat([model_data_sc['batting_team'], model_data_sc['bowling_team']]).unique()
+        score_le_team.fit(all_teams_score)
+        score_le_venue.fit(model_data_sc['venue'])
+        model_data_sc['venue_enc'] = score_le_venue.transform(model_data_sc['venue'])
+        model_data_sc['bat_enc'] = score_le_team.transform(model_data_sc['batting_team'])
+        model_data_sc['bowl_enc'] = score_le_team.transform(model_data_sc['bowling_team'])
+        X_sc = model_data_sc[['completed_overs', 'current_runs', 'current_wickets', 'crr', 'venue_enc', 'bat_enc', 'bowl_enc']]
+        y_sc = model_data_sc['final_score']
+        score_model = XGBRegressor(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42)
+        score_model.fit(X_sc, y_sc)
+        score_r2 = round(score_model.score(X_sc, y_sc), 3)
+        joblib.dump({'model': score_model, 'le_team': score_le_team, 'le_venue': score_le_venue, 'r2': score_r2}, 'score_model_full.joblib')
+        print(f"   Done (R² = {score_r2})")
 except Exception as e:
     print(f"   Error: {e}")
-    score_model = None
-    score_r2 = 0
 
 # ══════════════════════════════════════════════════════
 #  ML MODEL 2 — Win Predictor (Advanced XGBoost)
 # ══════════════════════════════════════════════════════
-print("Training Win Predictor (Advanced XGBoost)...")
+print("Loading Win Predictor...")
 win_model = None
 win_acc = 0
-teams_list = []
-venues_list = []
-le_team = LabelEncoder()
-le_venue = LabelEncoder()
-le_dec = LabelEncoder()
-win_counts_dict = {}
-total_games_dict = {}
-recent_win_counts = {}
-recent_total_games = {}
-
 try:
-    m = matches.dropna(subset=['toss_winner', 'toss_decision', 'venue',
-                                'batting_team', 'bowling_team', 'match_won_by']).copy()
-
-    all_teams = pd.concat([m['batting_team'], m['bowling_team'], m['toss_winner']]).unique()
-    le_team.fit(all_teams)
-    le_venue.fit(m['venue'])
-    le_dec.fit(m['toss_decision'])
-
-    win_counts_dict = m['match_won_by'].value_counts().to_dict()
-    for t in all_teams:
-        total_games_dict[t] = int((m['batting_team'] == t).sum() + (m['bowling_team'] == t).sum())
-
-    # --- RECENT FORM DICTS (last 3 seasons) ---
-    if 'season' in m.columns:
-        valid_seasons = sorted(m['season'].dropna().unique())
-        last_3 = valid_seasons[-3:] if len(valid_seasons) >= 3 else valid_seasons
-        m_recent = m[m['season'].isin(last_3)]
-        recent_win_counts = m_recent['match_won_by'].value_counts().to_dict()
-        for t in all_teams:
-            recent_total_games[t] = int((m_recent['batting_team'] == t).sum() + (m_recent['bowling_team'] == t).sum())
-
-    # --- GROUND DYNAMICS: TOSS BIAS ---
-    venue_chase_wr = {}
-    for v in m['venue'].unique():
-        v_matches = m[m['venue'] == v]
-        if len(v_matches) == 0:
-            venue_chase_wr[v] = 0.5
-            continue
-        bat_first_won = len(v_matches[(v_matches['toss_decision'] == 'bat') & (v_matches['toss_winner'] == v_matches['match_won_by'])]) + \
-                        len(v_matches[(v_matches['toss_decision'] == 'field') & (v_matches['toss_winner'] != v_matches['match_won_by'])])
-        venue_chase_wr[v] = (len(v_matches) - bat_first_won) / len(v_matches)
-
-    m['v_chase_wr'] = m['venue'].map(lambda x: venue_chase_wr.get(x, 0.5))
-    m['toss_impact'] = m.apply(lambda row: row['v_chase_wr'] if row['toss_decision'] == 'field' else 1.0 - row['v_chase_wr'], axis=1)
-
-    # --- SQUAD FORM (Last 5 Matches) ---
-    current_form_dict = {}
-    m_sorted = m.sort_values('date') if 'date' in m.columns else m.copy()
-    team_history = {team: [] for team in all_teams}
-    t1_cf, t2_cf = [], []
-
-    for _, row in m_sorted.iterrows():
-        t1, t2 = row['batting_team'], row['bowling_team']
-        h1, h2 = team_history[t1][-5:], team_history[t2][-5:]
-        t1_cf.append(sum(h1)/len(h1) if h1 else 0.5)
-        t2_cf.append(sum(h2)/len(h2) if h2 else 0.5)
-        team_history[t1].append(1 if row['match_won_by'] == t1 else 0)
-        team_history[t2].append(1 if row['match_won_by'] == t2 else 0)
-
-    m_sorted['t1_cf'], m_sorted['t2_cf'] = t1_cf, t2_cf
-    m = m_sorted.copy()
-    for team, history in team_history.items():
-        h = history[-5:]
-        current_form_dict[team] = sum(h)/len(h) if h else 0.5
-
-    # --- ADVANCED HEAD-TO-HEAD (Overall & Venue Specific) ---
-    h2h_dict, h2h_v_dict = {}, {}
-    for t1 in all_teams:
-        for t2 in all_teams:
-            if t1 == t2: continue
-            sub = m[((m['batting_team']==t1)&(m['bowling_team']==t2)) | ((m['batting_team']==t2)&(m['bowling_team']==t1))]
-            if len(sub) > 0:
-                h2h_dict[(t1, t2)] = len(sub[sub['match_won_by']==t1]) / len(sub)
-                for v in m['venue'].unique():
-                    v_sub = sub[sub['venue'] == v]
-                    if len(v_sub) > 0:
-                        h2h_v_dict[(t1, t2, v)] = len(v_sub[v_sub['match_won_by']==t1]) / len(v_sub)
-                    else:
-                        h2h_v_dict[(t1, t2, v)] = 0.5
-            else:
-                h2h_dict[(t1, t2)] = 0.5
-
-    m['h2h'] = m.apply(lambda r: h2h_dict.get((r['batting_team'], r['bowling_team']), 0.5), axis=1)
-    m['h2h_v'] = m.apply(lambda r: h2h_v_dict.get((r['batting_team'], r['bowling_team'], r['venue']), 0.5), axis=1)
-
-    m['t1_enc']  = le_team.transform(m['batting_team'])
-    m['t2_enc']  = le_team.transform(m['bowling_team'])
-    m['v_enc']   = le_venue.transform(m['venue'])
-    m['d_enc']   = le_dec.transform(m['toss_decision'])
-    m['target']  = (m['match_won_by'] == m['batting_team']).astype(int)
-
-    feats = ['t1_enc', 't2_enc', 'v_enc', 'd_enc', 'h2h', 'h2h_v', 'toss_impact', 't1_cf', 't2_cf']
-    X_w, y_w = m[feats], m['target']
-    Xtr, Xte, ytr, yte = train_test_split(X_w, y_w, test_size=0.3, random_state=42)
-    win_model = XGBClassifier(n_estimators=100, max_depth=4, learning_rate=0.05, random_state=42)
-    win_model.fit(Xtr, ytr)
-    win_acc = round(accuracy_score(yte, win_model.predict(Xte)) * 100, 1)
-    teams_list  = sorted(all_teams.tolist())
-    venues_list = sorted(m['venue'].unique().tolist())
-    print(f"   Accuracy = {win_acc}%")
+    if os.path.exists('win_model_full.joblib'):
+        data = joblib.load('win_model_full.joblib')
+        win_model, le_team, le_venue, le_dec = data['model'], data['le_team'], data['le_venue'], data['le_dec']
+        win_acc, h2h_dict, h2h_v_dict, venue_chase_wr = data['acc'], data['h2h'], data['h2h_v'], data['venue_chase_wr']
+        current_form_dict, teams_list, venues_list = data['current_form'], data['teams'], data['venues']
+        print(f"   Loaded from disk (Accuracy = {win_acc}%)")
+    else:
+        print("   Training from scratch...")
+        m = matches.dropna(subset=['toss_winner', 'toss_decision', 'venue', 'batting_team', 'bowling_team', 'match_won_by']).copy()
+        all_teams = pd.concat([m['batting_team'], m['bowling_team'], m['toss_winner']]).unique()
+        le_team, le_venue, le_dec = LabelEncoder(), LabelEncoder(), LabelEncoder()
+        le_team.fit(all_teams)
+        le_venue.fit(m['venue'])
+        le_dec.fit(m['toss_decision'])
+        venue_chase_wr = {}
+        for v in m['venue'].unique():
+            v_matches = m[m['venue'] == v]
+            bat_first_won = len(v_matches[(v_matches['toss_decision'] == 'bat') & (v_matches['toss_winner'] == v_matches['match_won_by'])]) + \
+                            len(v_matches[(v_matches['toss_decision'] == 'field') & (v_matches['toss_winner'] != v_matches['match_won_by'])])
+            venue_chase_wr[v] = (len(v_matches) - bat_first_won) / len(v_matches) if len(v_matches) > 0 else 0.5
+        m['v_chase_wr'] = m['venue'].map(lambda x: venue_chase_wr.get(x, 0.5))
+        m['toss_impact'] = m.apply(lambda row: row['v_chase_wr'] if row['toss_decision'] == 'field' else 1.0 - row['v_chase_wr'], axis=1)
+        current_form_dict, team_history = {}, {team: [] for team in all_teams}
+        t1_cf, t2_cf = [], []
+        m_sorted = m.sort_values('date') if 'date' in m.columns else m.copy()
+        for _, row in m_sorted.iterrows():
+            t1, t2 = row['batting_team'], row['bowling_team']
+            h1, h2 = team_history[t1][-5:], team_history[t2][-5:]
+            t1_cf.append(sum(h1)/len(h1) if h1 else 0.5)
+            t2_cf.append(sum(h2)/len(h2) if h2 else 0.5)
+            team_history[t1].append(1 if row['match_won_by'] == t1 else 0)
+            team_history[t2].append(1 if row['match_won_by'] == t2 else 0)
+        m_sorted['t1_cf'], m_sorted['t2_cf'] = t1_cf, t2_cf
+        m = m_sorted.copy()
+        for team, history in team_history.items(): current_form_dict[team] = sum(history[-5:])/len(history[-5:]) if history[-5:] else 0.5
+        h2h_dict, h2h_v_dict = {}, {}
+        for t1 in all_teams:
+            for t2 in all_teams:
+                if t1 == t2: continue
+                sub = m[((m['batting_team']==t1)&(m['bowling_team']==t2)) | ((m['batting_team']==t2)&(m['bowling_team']==t1))]
+                if len(sub) > 0:
+                    h2h_dict[(t1, t2)] = len(sub[sub['match_won_by']==t1]) / len(sub)
+                    for v in m['venue'].unique():
+                        v_sub = sub[sub['venue'] == v]
+                        h2h_v_dict[(t1, t2, v)] = len(v_sub[v_sub['match_won_by']==t1]) / len(v_sub) if len(v_sub) > 0 else 0.5
+                else: h2h_dict[(t1, t2)] = 0.5
+        m['h2h'] = m.apply(lambda r: h2h_dict.get((r['batting_team'], r['bowling_team']), 0.5), axis=1)
+        m['h2h_v'] = m.apply(lambda r: h2h_v_dict.get((r['batting_team'], r['bowling_team'], r['venue']), 0.5), axis=1)
+        m['t1_enc'], m['t2_enc'], m['v_enc'], m['d_enc'] = le_team.transform(m['batting_team']), le_team.transform(m['bowling_team']), le_venue.transform(m['venue']), le_dec.transform(m['toss_decision'])
+        m['target'] = (m['match_won_by'] == m['batting_team']).astype(int)
+        feats = ['t1_enc', 't2_enc', 'v_enc', 'd_enc', 'h2h', 'h2h_v', 'toss_impact', 't1_cf', 't2_cf']
+        Xtr, Xte, ytr, yte = train_test_split(m[feats], m['target'], test_size=0.3, random_state=42)
+        win_model = XGBClassifier(n_estimators=100, max_depth=4, learning_rate=0.05, random_state=42)
+        win_model.fit(Xtr, ytr)
+        win_acc = round(accuracy_score(yte, win_model.predict(Xte)) * 100, 1)
+        teams_list, venues_list = sorted(all_teams.tolist()), sorted(m['venue'].unique().tolist())
+        joblib.dump({'model': win_model, 'le_team': le_team, 'le_venue': le_venue, 'le_dec': le_dec, 'acc': win_acc, 'h2h': h2h_dict, 'h2h_v': h2h_v_dict, 'venue_chase_wr': venue_chase_wr, 'current_form': current_form_dict, 'teams': teams_list, 'venues': venues_list}, 'win_model_full.joblib')
+        print(f"   Done (Accuracy = {win_acc}%)")
 except Exception as e:
     print(f"   Error: {e}")
 
@@ -219,24 +175,15 @@ print("Training Player Clusters (K-Means)...")
 cluster_data = {'batters': None, 'bowlers': None, 'allrounders': None}
 try:
     # --- BATTERS ---
-    entry_overs = df.groupby(['match_id', 'batter'])['over'].min().groupby('batter').mean().reset_index()
-    entry_overs.rename(columns={'over': 'avg_entry_over'}, inplace=True)
-
-    bs = df.groupby('batter').agg(
-        total_runs=('runs_batter', 'sum'),
-        total_balls=('balls_faced', 'sum'),
-        matches=('match_id', 'nunique')
-    ).reset_index()
+    entry_overs = df.groupby(['match_id', 'batter'])['over'].min().groupby('batter').mean().reset_index().rename(columns={'over': 'avg_entry_over'})
+    bs = df.groupby('batter').agg(total_runs=('runs_batter', 'sum'), total_balls=('balls_faced', 'sum'), matches=('match_id', 'nunique')).reset_index()
     bs = bs.merge(entry_overs, on='batter', how='left')
     bs = bs[bs['total_balls'] >= 200].copy()
-    bs['strike_rate'] = (bs['total_runs'] / bs['total_balls'] * 100).round(2)
-    bs['avg_runs']    = (bs['total_runs'] / bs['matches']).round(2)
-
+    bs['strike_rate'], bs['avg_runs'] = (bs['total_runs'] / bs['total_balls'] * 100).round(2), (bs['total_runs'] / bs['matches']).round(2)
     scaler_b = StandardScaler()
     X_b = scaler_b.fit_transform(bs[['avg_entry_over', 'strike_rate', 'avg_runs']])
     kmeans_b = KMeans(n_clusters=3, random_state=42, n_init=10)
     bs['cluster'] = kmeans_b.fit_predict(X_b)
-
     cluster_entry = bs.groupby('cluster')['avg_entry_over'].mean().sort_values()
     roles_b = ['🏏 Opener', '🛡️ Middle Order', '⚡ Finisher']
     labels_map_b = {c: roles_b[i] for i, (c, _) in enumerate(cluster_entry.items())}
@@ -244,56 +191,28 @@ try:
     cluster_data['batters'] = bs
 
     # --- BOWLERS ---
-    v = df[df['valid_ball'] == 1]
-    
-    # Calculate middle overs percentage to infer spin/pace
-    mid_mask = (df['over'] > 6) & (df['over'] < 16)
-    mid_counts = df[mid_mask].groupby('bowler').size().reset_index(name='is_mid')
-    
-    bowls = v.groupby('bowler').agg(
-        total_runs=('runs_bowler', 'sum'),
-        total_balls=('valid_ball', 'sum'),
-        total_wickets=('bowler_wicket', 'sum')
-    ).reset_index()
+    v_balls = df[df['valid_ball'] == 1]
+    mid_counts = df[(df['over'] > 6) & (df['over'] < 16)].groupby('bowler').size().reset_index(name='is_mid')
+    bowls = v_balls.groupby('bowler').agg(total_runs=('runs_bowler', 'sum'), total_balls=('valid_ball', 'sum'), total_wickets=('bowler_wicket', 'sum')).reset_index()
     bowls = bowls.merge(mid_counts, on='bowler', how='left').fillna(0)
-    
     bowls = bowls[bowls['total_balls'] >= 300].copy()
     bowls['economy'] = (bowls['total_runs'] / bowls['total_balls'] * 6).round(2)
     bowls['strike_rate'] = (bowls['total_balls'] / bowls['total_wickets'].replace(0, np.nan)).round(2)
     bowls['strike_rate'].fillna(bowls['strike_rate'].max(), inplace=True)
     bowls['mid_pct'] = bowls['is_mid'] / bowls['total_balls']
-    
     scaler_bw = StandardScaler()
     X_bw = scaler_bw.fit_transform(bowls[['economy', 'strike_rate', 'mid_pct']])
     kmeans_bw = KMeans(n_clusters=4, random_state=42, n_init=10)
     bowls['cluster'] = kmeans_bw.fit_predict(X_bw)
-    
-    cluster_stats = bowls.groupby('cluster').agg(
-        avg_mid_pct=('mid_pct', 'mean'),
-        avg_econ=('economy', 'mean'),
-        avg_sr=('strike_rate', 'mean')
-    ).reset_index()
-    
-    cluster_stats = cluster_stats.sort_values('avg_mid_pct', ascending=False)
-    spinners = cluster_stats.head(2).sort_values('avg_econ')
-    pacers = cluster_stats.tail(2).sort_values('avg_sr')
-    
-    labels_map_bw = {
-        spinners.iloc[0]['cluster']: '🌀 Off Spinner',
-        spinners.iloc[1]['cluster']: '🪄 Leg Spinner',
-        pacers.iloc[0]['cluster']: '🚀 Pacer',
-        pacers.iloc[1]['cluster']: '🎯 Medium Pacer'
-    }
-    
+    cluster_stats = bowls.groupby('cluster').agg(avg_mid_pct=('mid_pct', 'mean'), avg_econ=('economy', 'mean'), avg_sr=('strike_rate', 'mean')).reset_index().sort_values('avg_mid_pct', ascending=False)
+    spinners, pacers = cluster_stats.head(2).sort_values('avg_econ'), cluster_stats.tail(2).sort_values('avg_sr')
+    labels_map_bw = {spinners.iloc[0]['cluster']: '🌀 Off Spinner', spinners.iloc[1]['cluster']: '🪄 Leg Spinner', pacers.iloc[0]['cluster']: '🚀 Pacer', pacers.iloc[1]['cluster']: '🎯 Medium Pacer'}
     bowls['role'] = bowls['cluster'].map(labels_map_bw)
     cluster_data['bowlers'] = bowls
 
     # --- ALLROUNDERS ---
-    ar = pd.merge(bs[['batter', 'total_runs', 'strike_rate', 'avg_runs']],
-                  bowls[['bowler', 'total_wickets', 'economy', 'strike_rate']],
-                  left_on='batter', right_on='bowler', how='inner')
+    ar = pd.merge(bs[['batter', 'total_runs', 'strike_rate', 'avg_runs']], bowls[['bowler', 'total_wickets', 'economy', 'strike_rate']], left_on='batter', right_on='bowler', how='inner')
     ar.rename(columns={'batter': 'player', 'strike_rate_x': 'bat_sr', 'strike_rate_y': 'bowl_sr'}, inplace=True)
-
     scaler_ar = StandardScaler()
     X_ar = scaler_ar.fit_transform(ar[['bat_sr', 'avg_runs', 'economy', 'total_wickets']])
     kmeans_ar = KMeans(n_clusters=3, random_state=42, n_init=10)
