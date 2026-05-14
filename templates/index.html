@@ -406,6 +406,7 @@
     <div class="tab"        onclick="showTab('batting',this)">🏏 Batting</div>
     <div class="tab"        onclick="showTab('bowling',this)">🎳 Bowling</div>
     <div class="tab"        onclick="showTab('seasons',this)">📅 Seasons</div>
+    <div class="tab"        onclick="showTab('history',this)">📚 History</div>
     <div class="tab ml-tab" onclick="showTab('ml-score',this)">🤖 Score Predictor <span class="tag">ML</span></div>
     <div class="tab ml-tab" onclick="showTab('ml-win',this)">🎯 Win Predictor <span class="tag">ML</span></div>
     <div class="tab ml-tab" onclick="showTab('ml-cluster',this)">🔬 Player Clusters <span class="tag">ML</span></div>
@@ -418,6 +419,7 @@
         <div class="card-head"><div class="card-title"><span class="ico">🏆</span>Most Wins by Team</div></div>
         <div class="chart-wrap"><div class="load" id="l-tw"><span class="spinner"></span>Loading…</div><canvas id="teamWinsChart" style="display:none"></canvas></div>
       </div>
+
       <div class="card">
         <div class="card-head"><div class="card-title"><span class="ico">🪙</span>Toss Decision Preference</div></div>
         <div class="chart-wrap"><div class="load" id="l-td"><span class="spinner"></span>Loading…</div><canvas id="tossDecChart" style="display:none"></canvas></div>
@@ -506,23 +508,47 @@
     </div>
   </div>
 
+  <!-- HISTORY -->
+  <div class="section" id="tab-history">
+    <div class="grid1">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="ico">📚</span>Tournament History</div></div>
+        <div class="table-wrap">
+          <table class="player-table">
+            <thead><tr><th>Season</th><th>Champion</th><th>Orange Cap</th><th>Purple Cap</th></tr></thead>
+            <tbody id="history-tbody"><tr><td colspan="4" style="text-align:center; padding:24px; color:var(--text-faint);">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ML: SCORE -->
   <div class="section" id="tab-ml-score">
     <div class="grid2">
       <div class="card ml-card">
         <div class="card-head">
           <div class="card-title"><span class="ico">🤖</span>Score Predictor</div>
-          <div class="card-sub">Linear Regression</div>
+          <div class="card-sub">XGBoost</div>
         </div>
         <div class="ml-form">
           <div class="ml-row">
+            <div class="field"><label>Batting Team</label><select id="sc-bat"><option>Loading…</option></select></div>
+            <div class="field"><label>Bowling Team</label><select id="sc-bowl"><option>Loading…</option></select></div>
+          </div>
+          <div class="field"><label>Venue</label><select id="sc-venue"><option>Loading…</option></select></div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px;">
             <div class="field">
-              <label>Powerplay Runs (overs 1–6)</label>
-              <input type="number" id="pp-runs" placeholder="e.g. 55" min="0" max="120" value="55">
+              <label>Over</label>
+              <input type="number" id="current-over" placeholder="10" min="1" max="20" value="10">
             </div>
             <div class="field">
-              <label>Powerplay Wickets Lost</label>
-              <input type="number" id="pp-wkts" placeholder="e.g. 2" min="0" max="6" value="2">
+              <label>Runs</label>
+              <input type="number" id="current-runs" placeholder="85" min="0" max="350" value="85">
+            </div>
+            <div class="field">
+              <label>Wickets</label>
+              <input type="number" id="current-wkts" placeholder="2" min="0" max="10" value="2">
             </div>
           </div>
           <button class="ml-btn" onclick="predictScore()">🎯 Predict Final Score</button>
@@ -534,17 +560,16 @@
         </div>
       </div>
       <div class="card ml-card">
-        <div class="card-head"><div class="card-title"><span class="ico">📊</span>About Linear Regression</div></div>
+        <div class="card-head"><div class="card-title"><span class="ico">📊</span>About XGBoost</div></div>
         <div class="prose">
-          Linear Regression finds the <span class="hl">best-fit line</span> between input features and a target value.
-          <p style="margin-top:12px"><strong>Features used</strong></p>
+          XGBoost is an advanced <span class="hl">gradient boosting</span> algorithm that builds multiple decision trees to find complex, non-linear patterns.
+          <p style="margin-top:12px"><strong>Contextual Features used</strong></p>
           <ul>
-            <li>Powerplay runs scored</li>
-            <li>Wickets lost in powerplay</li>
+            <li>Venue & Teams</li>
+            <li>Current Over & Run Rate</li>
+            <li>Runs & Wickets So Far</li>
           </ul>
           <p style="margin-top:8px"><strong>Target:</strong> Total innings score</p>
-          <p style="margin-top:8px"><strong>Formula</strong></p>
-          <p style="margin-top:6px"><code>Score = w₁·pp_runs + w₂·pp_wickets + bias</code></p>
         </div>
         <div class="metric-box">
           <div class="lbl">Model Performance</div>
@@ -561,7 +586,7 @@
       <div class="card ml-card">
         <div class="card-head">
           <div class="card-title"><span class="ico">🎯</span>Win Probability Predictor</div>
-          <div class="card-sub">Random Forest</div>
+          <div class="card-sub">XGBoost</div>
         </div>
         <div class="ml-form" id="win-form">
           <div class="ml-row">
@@ -585,22 +610,22 @@
         </div>
       </div>
       <div class="card ml-card">
-        <div class="card-head"><div class="card-title"><span class="ico">🌲</span>About Random Forest</div></div>
+        <div class="card-head"><div class="card-title"><span class="ico">🌲</span>About Advanced XGBoost</div></div>
         <div class="prose">
-          Random Forest builds <span class="hl">100 decision trees</span> and combines their votes for the final prediction.
+          Our Advanced XGBoost model utilizes gradient-boosted trees optimized for high-volatility T20 data.
           <p style="margin-top:12px"><strong>Features used</strong></p>
           <ul>
-            <li>Team identities (Team 1 &amp; Team 2)</li>
-            <li>Historical win rates of each team</li>
-            <li>Venue (home advantage)</li>
-            <li>Toss winner and toss decision</li>
+            <li><strong>Venue Toss Bias:</strong> Weighted for chasing advantage.</li>
+            <li><strong>Venue-Specific H2H:</strong> Team performance at this exact ground.</li>
+            <li><strong>Squad Form:</strong> Win rate over the last 5 matches.</li>
+            <li><strong>Overall H2H &amp; Matchup:</strong> Historical franchise records.</li>
           </ul>
-          <p style="margin-top:8px"><strong>Why it works:</strong> Captures non-linear patterns and feature interactions automatically — no manual engineering needed.</p>
+          <p style="margin-top:8px"><strong>Why it works:</strong> It factors in ground-specific tactical variables that general models often miss.</p>
         </div>
         <div class="metric-box">
           <div class="lbl">Model Accuracy (Test Set)</div>
           <div class="val" id="acc-display">loading…</div>
-          <div class="hint">100 trees · 80/20 train-test split</div>
+          <div class="hint">100 trees · 70/30 train-test split</div>
         </div>
       </div>
     </div>
@@ -706,6 +731,16 @@ fetch('/api/team_wins').then(r=>r.json()).then(d=>{
   document.getElementById('s-champ').textContent = d.teams[0];
 });
 
+fetch('/api/history').then(r=>r.json()).then(d=>{
+  const tbody = document.getElementById('history-tbody');
+  tbody.innerHTML = d.map(r => `<tr>
+    <td style="font-weight:600; color:var(--text);">${r.season}</td>
+    <td style="color:var(--brand2);font-weight:600;">${r.champion}</td>
+    <td style="color:var(--brand);">${r.orange_cap}</td>
+    <td style="color:#a78bfa;">${r.purple_cap}</td>
+  </tr>`).join('');
+});
+
 fetch('/api/toss_effect').then(r=>r.json()).then(d=>{
   const c = sc('tossEffChart','l-te');
   new Chart(c,{type:'doughnut',data:{labels:d.labels,datasets:[{data:d.values,backgroundColor:[PALETTE.teal,PALETTE.rose],borderWidth:0,hoverOffset:6}]},
@@ -801,15 +836,19 @@ fetch('/api/season_scores').then(r=>r.json()).then(d=>{
 
 // ── ML 1: Score Predictor ─────────────────────────────
 function predictScore() {
-  const pp  = parseFloat(document.getElementById('pp-runs').value);
-  const wkt = parseFloat(document.getElementById('pp-wkts').value);
-  if (isNaN(pp)||isNaN(wkt)) { alert('Please enter valid numbers'); return; }
+  const bat = document.getElementById('sc-bat').value;
+  const bowl = document.getElementById('sc-bowl').value;
+  const venue = document.getElementById('sc-venue').value;
+  const o   = parseFloat(document.getElementById('current-over').value);
+  const r   = parseFloat(document.getElementById('current-runs').value);
+  const wkt = parseFloat(document.getElementById('current-wkts').value);
+  if (isNaN(o)||isNaN(r)||isNaN(wkt)) { alert('Please enter valid numbers'); return; }
   fetch('/api/ml/predict_score',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({powerplay_runs:pp,powerplay_wickets:wkt})})
+    body:JSON.stringify({batting_team:bat, bowling_team:bowl, venue:venue, current_over:o, current_runs:r, current_wickets:wkt})})
   .then(r=>r.json()).then(d=>{
     if(d.error){alert('Error: '+d.error);return;}
     document.getElementById('score-val').textContent  = `Predicted: ${d.predicted_score} runs`;
-    document.getElementById('score-insight').textContent = `Powerplay of ${pp} runs is ${d.insight} (avg: ${d.avg_powerplay})`;
+    document.getElementById('score-insight').textContent = d.insight;
     document.getElementById('score-badge').textContent   = `${d.model} · R² = ${d.r2_score}`;
     document.getElementById('r2-display').textContent    = `R² = ${d.r2_score}`;
     document.getElementById('score-result').classList.add('show');
@@ -844,6 +883,13 @@ fetch('/api/ml/teams').then(r=>r.json()).then(d=>{
   updateDropdowns();
 
   document.getElementById('sel-venue').innerHTML = d.venues.map(v=>`<option value="${v}">${v}</option>`).join('');
+  document.getElementById('sc-venue').innerHTML = d.venues.map(v=>`<option value="${v}">${v}</option>`).join('');
+  
+  const allTeamsOpts = allWinTeams.map(t => `<option value="${t}">${t}</option>`).join('');
+  document.getElementById('sc-bat').innerHTML = allTeamsOpts;
+  document.getElementById('sc-bowl').innerHTML = allTeamsOpts;
+  document.getElementById('sc-bowl').selectedIndex = 1;
+
   document.getElementById('acc-display').textContent = 'Run a prediction';
 });
 
