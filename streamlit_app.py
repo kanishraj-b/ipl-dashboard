@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -241,7 +242,7 @@ with tab2:
         st.plotly_chart(fig, use_container_width=True)
     with c2:
         st.subheader("Bat vs Field After Toss")
-        st.plotly_chart(px.bar(stats['toss_decision'], x='Decision', y='Count', color_discrete_sequence=['#14b8a6']), use_container_width=True)
+        st.plotly_chart(px.bar(stats['toss_decision'], x='Decision', y='Count', color_discrete_sequence=['#14b8a6']), use_container_width=True, key="toss_decision_tab2")
 
 with tab3:
     st.subheader("Top 10 Batters by Strike Rate (min 500 balls)")
